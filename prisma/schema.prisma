@@ -1,0 +1,151 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+model Post {
+  id               String     @id @default(uuid())  // UUID for distributed scalability
+  title            String?    // Optional, if Bluesky posts may not have titles
+  text             String     @db.Text  // Use Text type for long content
+  uri              String     @unique
+  language         String?
+  location         String?
+  timestamp        DateTime   @db.Timestamp(0)  // Precision for sorting
+  platformId       String     // FK to Platform
+  authorId         String     // FK to User (normalized author)
+  processedAt      DateTime?  // When the post was classified (for auditing)
+
+  // Relationships
+  platform         Platform   @relation(fields: [platformId], references: [id])
+  author           User       @relation(fields: [authorId], references: [id])
+  intents          PostIntent[]  // Many-to-many with Intents
+  topics           PostTopic[]   // Many-to-many with Topics
+  tags             PostTag[]     // Many-to-many with Tags
+
+  @@index([timestamp])  // For time-based queries
+  @@index([uri])        // Quick lookups by post URI
+}
+
+model Intent {
+  id            String     @id @default(uuid())
+  categoryId    String     // FK to Category
+  name          IntentName @unique  // e.g., "Recommendation"
+
+  // Relationships
+  category      Category   @relation(fields: [categoryId], references: [id])
+  posts         PostIntent[]
+
+  @@index([name])
+}
+
+model Category {
+  id            String        @id @default(uuid())
+  name          CategoryName  @unique  // e.g., "Direct Seek"
+
+  // Relationships
+  intents       Intent[]
+}
+
+model Topic {
+  id            String     @id @default(uuid())
+  name          String     @unique  // e.g., "Coworking Space"
+
+  // Relationships
+  posts         PostTopic[]
+
+  @@index([name])
+}
+
+model PostIntent {
+  postId           String
+  intentId         String
+  confidenceScore  Float?     // Per-intent confidence (0-1)
+
+  // Relationships
+  post             Post       @relation(fields: [postId], references: [id])
+  intent           Intent     @relation(fields: [intentId], references: [id])
+
+  @@id([postId, intentId])  // Composite PK
+  @@index([confidenceScore])  // For filtering high-confidence leads
+}
+
+model PostTopic {
+  postId           String
+  topicId          String
+
+  // Relationships
+  post             Post       @relation(fields: [postId], references: [id])
+  topic            Topic      @relation(fields: [topicId], references: [id])
+
+  @@id([postId, topicId])
+}
+
+model Tag {
+  id            String     @id @default(uuid())
+  name          String     @unique  // e.g., "#Berlin"
+
+  // Relationships
+  posts         PostTag[]
+
+  @@index([name])
+}
+
+model PostTag {
+  postId           String
+  tagId            String
+
+  // Relationships
+  post             Post       @relation(fields: [postId], references: [id])
+  tag              Tag        @relation(fields: [tagId], references: [id])
+
+  @@id([postId, tagId])
+}
+
+model Platform {
+  id            String     @id @default(uuid())
+  name          String     @unique  // e.g., "Bluesky"
+
+  // Relationships
+  posts         Post[]
+}
+
+model User {
+  id            String     @id @default(uuid())
+  username      String     @unique  // Bluesky handle
+  profileUrl    String?    // For follow-up in leads
+
+  // Relationships
+  posts         Post[]     // Posts authored by this user
+}
+
+// Enums for type safety on fixed values (your intent hierarchy)
+enum IntentName {
+  RECOMMENDATION
+  PURCHASE_OR_TRANSACTIONAL_INTENT
+  SWITCH_SIGNAL
+  COMPLAINT
+  COMPARISONS_OR_EVALUATIONS
+  EXPRESSIONS_OF_NEED_OR_DESIRE
+  QUESTIONS_OR_INQUIRIES
+  LIFE_EVENTS_OR_TRIGGER_MOMENTS
+  // Add more as needed
+}
+
+enum CategoryName {
+  DIRECT_SEEK
+  SWITCH_SIGNAL
+  IMPLICIT_NEED
+  // Add more groups if expanding
+}
