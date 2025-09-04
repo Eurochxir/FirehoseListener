@@ -7,6 +7,7 @@ import { AppBskyFeedPost } from '@atproto/api';
 export class FirehoseListenerService implements OnApplicationBootstrap, OnApplicationShutdown {
   private firehose: Firehose;
   private runner: MemoryRunner;
+  private lastPostTimestamp = 0;
 
   onApplicationBootstrap() {
     console.log('Application bootstrapped');
@@ -35,6 +36,13 @@ export class FirehoseListenerService implements OnApplicationBootstrap, OnApplic
       service: 'wss://bsky.network',
       filterCollections: ['app.bsky.feed.post'],
       handleEvent: async (evt) => {
+        const now = Date.now();
+        if (now - this.lastPostTimestamp < 10000) {
+          // Skip this event to throttle the processing
+          return;
+        }
+        this.lastPostTimestamp = now;
+
         try {
           // The firehose sends create, update, and delete events.
           // We need to make sure the record exists before we process it.
@@ -46,12 +54,10 @@ export class FirehoseListenerService implements OnApplicationBootstrap, OnApplic
           const post = evt.record as AppBskyFeedPost.Record;
           const text = post.text || '';
 
-          if (text.toLowerCase().includes('coffee')) {
-            const didResolver = new DidResolver({});
-            const profile = await didResolver.resolveAtprotoData(authorDid);
-            const authorHandle = profile?.handle || authorDid;
-            console.log(`New post: ${authorHandle} - ${text}`);
-          }
+          const didResolver = new DidResolver({});
+          const profile = await didResolver.resolveAtprotoData(authorDid);
+          const authorHandle = profile?.handle || authorDid;
+          console.log(`New post: ${authorHandle} - ${text}`);
         } catch (error) {
           console.error('Error processing message:', error.message);
         }
